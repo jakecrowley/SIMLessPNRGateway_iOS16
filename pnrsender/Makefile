@@ -1,10 +1,9 @@
-
-THEOS_DEVICE_IP = 192.168.1.10
+THEOS_DEVICE_IP = 192.168.0.142
 ARCHS = arm64
 
-TARGET := iphone:clang:12.4
+TARGET := iphone:clang:16.5:14.0
 INSTALL_TARGET_PROCESSES = imagent Preferences identityservicesd SpringBoard CommCenter CoreTelephony MobileSMS IMCore IMDaemonCore backboardd
-SYSROOT = $(THEOS)/sdks/iPhoneOS12.4.sdk
+SYSROOT = $(THEOS)/sdks/iPhoneOS16.5.sdk
 
 
 include $(THEOS)/makefiles/common.mk

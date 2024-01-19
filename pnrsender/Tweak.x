@@ -25,7 +25,13 @@ NSString * const DUMMY_IMSI = @"310410777777778";
 
 @end
 
+// iOS 16 PATCH: uses only internal Objective-C runtime methods for hooking, 
+// Substitute is dumb and refuses to find any classes even though they are definitely there...
+%config(generator=internal); 
 
+///
+// TODO: Replace this, doesn't exist in iOS 16
+///
 %hook IDSPhoneNumberValidationMechanism
 
     + (id)SMSMechanismWithContext:(id)gatewayAddress {
@@ -111,9 +117,47 @@ NSString * const DUMMY_IMSI = @"310410777777778";
     };
 %end
 
-MSHook(int, _CTServerConnectionIsUserIdentityModuleRequired, void* arg1, void* arg2) {
-    return 0;
-}
+///
+// iOS 16 PATCH: theos complains it cant find _CTServerConnectionIsUserIdentityModuleRequired
+///
+// MSHook(int, _CTServerConnectionIsUserIdentityModuleRequired, void* arg1, void* arg2) {
+//     return 0;
+// }
+
+///
+// iOS 16 PATCH: maybe necessary? not sure if i'm even doing this right it just spams the logs lol
+///
+%hook IDSCTAdapterCache
+    
+    - (unsigned long long)isAnySIMInserted {
+        unsigned long long originalStatus = %orig;
+        unsigned long long newStatus = 1;
+        NSLog(@"PNRGate: Device queried sim inserted: %lld, replacing with %lld", originalStatus, newStatus);
+        return newStatus;
+    }
+
+%end
+
+
+///
+// iOS 16 PATCH
+// Override phone number, it seems to work considering it replaces the phone number shown in Send & Receive tab
+///
+%hook IDSPhoneUser 
+
+    - (NSString*)phoneNumber {
+        NSError *error;
+        NSString *fileContents = [NSString stringWithContentsOfFile:@"/var/jb/pnr_android_number.txt" encoding:NSUTF8StringEncoding error:&error];
+
+        if (error) {
+            NSLog(@"PNRGateway: Error reading phone number from file: %@", error);
+        }
+
+        NSString *trimmedString = [fileContents stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        return trimmedString;
+    }
+
+%end
 
 
 %hook IDSPhoneNumberValidationStateMachine
@@ -202,29 +246,31 @@ MSHook(int, _CTServerConnectionIsUserIdentityModuleRequired, void* arg1, void* a
             NSLog(@"PNRGateway: MRYIPC center already exists! Value is %@", propertyValue);
         } else {
 
-            NSLog(@"PNRGateway: Overriding _CTServerConnectionIsUserIdentityModuleRequired");
+            // NSLog(@"PNRGateway: Overriding _CTServerConnectionIsUserIdentityModuleRequired");
 
 
-            //This overrides the _CTServerConnectionIsUserIdentityModuleRequired C function, which
-            //IDSRegistration checks later during the HTTP Registration step (to make sure there's a SIM
-            //card in the device).
-            //It might also work to hook -(bool)requiresSIMInserted in IMMobileNetworkManager
-            void *coretelephony_ref = dlopen("/System/Library/PrivateFrameworks/CoreTelephony.framework/CoreTelephony", RTLD_LAZY);
+            // iOS 16 PATCH: theos complains it cant find _CTServerConnectionIsUserIdentityModuleRequired
 
-            if (coretelephony_ref) {
-                NSLog(@"PNRGateway: libdyld_handle is not null!");
-                void *dlsym_funcptr = dlsym(coretelephony_ref, "_CTServerConnectionIsUserIdentityModuleRequired");
+            // //This overrides the _CTServerConnectionIsUserIdentityModuleRequired C function, which
+            // //IDSRegistration checks later during the HTTP Registration step (to make sure there's a SIM
+            // //card in the device).
+            // //It might also work to hook -(bool)requiresSIMInserted in IMMobileNetworkManager
+            // void *coretelephony_ref = dlopen("/System/Library/PrivateFrameworks/CoreTelephony.framework/CoreTelephony", RTLD_LAZY);
 
-                if (dlsym_funcptr) {
-                    NSLog(@"PNRGateway: dlsym_funcptr is not null!");
-                    MSHookFunction(dlsym_funcptr, MSHake(_CTServerConnectionIsUserIdentityModuleRequired));
-                } else {
-                    NSLog(@"PNRGateway: dlsym_funcptr is null :(");
-                }
+            // if (coretelephony_ref) {
+            //     NSLog(@"PNRGateway: libdyld_handle is not null!");
+            //     void *dlsym_funcptr = dlsym(coretelephony_ref, "_CTServerConnectionIsUserIdentityModuleRequired");
 
-            } else {
-                NSLog(@"PNRGateway: libdyld_handle is null :(");
-            }
+            //     if (dlsym_funcptr) {
+            //         NSLog(@"PNRGateway: dlsym_funcptr is not null!");
+            //         MSHookFunction(dlsym_funcptr, MSHake(_CTServerConnectionIsUserIdentityModuleRequired));
+            //     } else {
+            //         NSLog(@"PNRGateway: dlsym_funcptr is null :(");
+            //     }
+
+            // } else {
+            //     NSLog(@"PNRGateway: libdyld_handle is null :(");
+            // }
 
 
 
@@ -283,15 +329,17 @@ MSHook(int, _CTServerConnectionIsUserIdentityModuleRequired, void* arg1, void* a
         return %orig;
     };
 
-    - (void)_registrationStateChangedNotification:(id)arg1 {
-        NSLog(@"PNRGateway: Registration state changed notification: %@", arg1);
-        %orig;
-    };
+    ///
+    // iOS 16 PATCH - unnecessary
+    // - (void)_registrationStateChangedNotification:(id)arg1 {
+    //     NSLog(@"PNRGateway: Registration state changed notification: %@", arg1);
+    //     %orig;
+    // };
 
-    - (void)_checkRegistrationStatus {
-        NSLog(@"PNRGateway: Device checked registration status");
-        %orig;
-    }
+    // - (void)_checkRegistrationStatus {
+    //     NSLog(@"PNRGateway: Device checked registration status");
+    //     %orig;
+    // }
 
     - (long long)_registrationControlStatus {
         long long originalStatus = %orig;
